@@ -1,7 +1,7 @@
 import streamlit as st
 import urllib.parse
 import re
-from pyrealparser import Tune
+from pyRealParser import Tune
 
 # ==========================================
 # 0. 내장 데이터 (여기에 iReal Pro 링크를 넣으세요)
