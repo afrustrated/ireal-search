@@ -10,7 +10,7 @@ DEFAULT_DATA = "irealb://9%2E20%20Special=Warren%20Earl==Medium%20Swing=C==1r34L
 
 
 # ==========================================
-# 1. 화성학 엔진 (Harmony Engine)
+# 1. 화성학 엔진
 # ==========================================
 class HarmonyEngine:
     def __init__(self):
@@ -19,67 +19,33 @@ class HarmonyEngine:
             'E': 4, 'Fb': 4, 'F': 5, 'E#': 5, 'Gb': 6, 'F#': 6, 'G': 7,
             'Ab': 8, 'G#': 8, 'A': 9, 'Bb': 10, 'A#': 10, 'B': 11, 'Cb': 11
         }
-        # 역매핑 (숫자 -> 문자, 결과 출력용 아님)
-        self.num_to_note = {v: k for k, v in self.note_map.items()}
 
     def simplify_quality(self, quality_str):
-            """ 
-            코드 성질 단순화 (논리 순서 수정됨)
-            - 기존 버그 수정: 7-9(7b9)이 마이너로 인식되는 문제 해결
-            """
-            q = quality_str.strip()
-            
-            # 1. 표기법 대통합 (Maj, Dim 등 안전한 것만 먼저 변환)
-            # 주의: '-'를 'm'으로 섣불리 바꾸지 않습니다.
-            q = q.replace("^", "maj").replace("min", "m").replace("Min", "m")
-    
-            # [그룹 1] 하프 디미니시 (가장 특이하므로 1순위 체크)
-            # m7b5, h, ø
-            if "m7b5" in q or "h" in q or "ø" in q:
-                return "HALF_DIM"
-    
-            # [그룹 2] 디미니시
-            if "dim" in q or "o" in q or "°" in q:
-                return "DIM"
-    
-            # [그룹 3] 도미넌트 패밀리 (핵심 수정!)
-            # 7, 9, 13, alt 등이 있으면 마이너 기호(-)가 있든 말든 도미넌트입니다.
-            # 예: 7-9 (7b9), 7alt, 9, 13
-            if "7" in q or "9" in q or "11" in q or "13" in q or "alt" in q:
-                # 단, 'm7'이나 'maj7'은 제외해야 함
-                is_minor = "m" in q or ("-" in q and "7" not in q) # 7 없이 -만 있으면 마이너
-                is_major = "maj" in q or "M" in q
-                
-                # 마이너도 아니고 메이저도 아닌데 숫자(7,9..)가 있다? -> 도미넌트
-                if not is_minor and not is_major:
-                    return "DOMINANT"
-                
-                # 예외: C-7 (Cm7) 같은 경우 '-'가 m 역할을 함.
-                # 하지만 C7-9 (C7b9) 같은 경우 '-'는 b 역할을 함.
-                # 따라서 '7' 바로 뒤에 '-'가 오면 텐션(b)일 확률이 높음.
-                if "7-" in q: 
-                    return "DOMINANT"
-    
-            # [그룹 4] 마이너 패밀리
-            # m, -, min
-            if "m" in q or "-" in q:
-                return "MINOR"
-    
-            # [그룹 5] 메이저 패밀리
-            # 아무것도 없거나, 6, maj
-            if q == "" or q == "6" or "maj" in q or "M" in q:
-                return "MAJOR"
-    
-            return "DOMINANT" # 분류 안 되면 도미넌트로 퉁침 (안전장치)
+        q = quality_str.strip()
+        # 표기법 대통합
+        q = q.replace("^", "maj").replace("min", "m").replace("Min", "m")
+
+        if "m7b5" in q or "h" in q or "ø" in q: return "HALF_DIM"
+        if "dim" in q or "o" in q or "°" in q: return "DIM"
+        # 도미넌트 우선 판단 (7,9,13,alt 등이 있으면 무조건 도미넌트)
+        if "7" in q or "9" in q or "11" in q or "13" in q or "alt" in q:
+            is_minor = "m" in q or ("-" in q and "7" not in q)
+            is_major = "maj" in q or "M" in q
+            if not is_minor and not is_major: return "DOMINANT"
+            if "7-" in q: return "DOMINANT" # 7-9 케이스
+
+        if "m" in q or "-" in q: return "MINOR"
+        if q == "" or q == "6" or "maj" in q or "M" in q: return "MAJOR"
+        return "DOMINANT"
 
     def parse_chord(self, chord_str):
-        """ (근음, 단순화된 성질, 베이스음) 반환 """
         if not chord_str: return None, None, None
+        if '/' in chord_str: main, bass = chord_str.split('/')[:2]
+        else: main, bass = chord_str, None
         
-        if '/' in chord_str:
-            main, bass = chord_str.split('/')[:2]
-        else:
-            main, bass = chord_str, None
+        # 근음이 A~G로 시작하지 않으면(예: W, n, T44 등) 즉시 탈락시킴
+        if len(main) < 1 or main[0] not in "ABCDEFG":
+            return None, None, None
 
         match = re.match(r"([A-G][b#]?)(.*)", main)
         if match:
@@ -90,19 +56,15 @@ class HarmonyEngine:
         return None, None, None
 
     def get_semitone_distance(self, note1, note2):
-        """ note1에서 note2까지의 반음 거리 """
         if note1 not in self.note_map or note2 not in self.note_map: return None
         v1, v2 = self.note_map[note1], self.note_map[note2]
         return (v2 - v1) % 12
     
     def get_key_root(self, key_str):
-        """ 키 문자열(Eb-, C 등)에서 근음 추출 """
-        # iReal Pro 키는 'A-' 형태가 많음
-        clean_key = key_str.replace('-', '').strip()
-        return clean_key
+        return key_str.replace('-', '').strip()
 
 # ==========================================
-# 2. 데이터 처리 및 검색 로직
+# 2. 데이터 처리 (강력한 정제 로직 포함)
 # ==========================================
 @st.cache_data
 def load_songs_from_string(ireal_string):
@@ -120,40 +82,35 @@ def load_songs_from_string(ireal_string):
     return songs
 
 def extract_clean_chords(song):
-    """ 곡의 코드 문자열을 리스트로 변환 (중복 제거 기능 추가됨) """
-    # 1. 표기법 통일 (마이너, 메이저 기호 등)
+    """ 곡의 코드 문자열을 리스트로 변환 (유령 코드 제거 강화) """
     raw = song.chord_string.replace("-", "m").replace("^", "maj")
     
-    # 2. 특수기호 제거 (마디줄, 괄호, 박자표시 등)
-    clean = re.sub(r"[\|\[\]\{\}\(\)\*xT<>]", " ", raw)
+    # [수정] 섹션마커(*A), 박자(T44), 괄호 등을 공백으로 치환
+    # \d는 숫자, *는 섹션, T는 박자표시 문자 등
+    clean = re.sub(r"\*[a-zA-Z]", " ", raw) # *A, *B 같은 섹션 마커 제거
+    clean = re.sub(r"T\d+", " ", clean)     # T44 같은 박자표 제거
+    clean = re.sub(r"[\|\[\]\{\}\(\)<>xWn]", " ", clean) # 기타 특수문자 및 쉼표(W), No Chord(n) 제거
     
-    # 3. 1차 리스트 변환 (숫자 제외)
+    # 1차 리스트 변환 (숫자 제외)
     raw_list = [c for c in clean.split() if not c.isdigit()]
     
-    # 4. [핵심] 연속된 중복 코드 제거 (Merge Logic)
-    # 예: ['F#m7b5', 'B7', 'B7', 'Dm7'] -> ['F#m7b5', 'B7', 'Dm7']
-    if not raw_list:
-        return []
-        
-    merged_list = [raw_list[0]] # 첫 번째 코드는 무조건 넣음
-    
+    # 중복 제거 (Merge)
+    if not raw_list: return []
+    merged_list = [raw_list[0]]
     for i in range(1, len(raw_list)):
-        current_chord = raw_list[i]
-        previous_chord = raw_list[i-1]
-        
-        # 바로 앞의 코드와 다를 때만 리스트에 추가
-        if current_chord != previous_chord:
-            merged_list.append(current_chord)
+        if raw_list[i] != raw_list[i-1]:
+            merged_list.append(raw_list[i])
             
     return merged_list
 
-# --- [모드 1] 실음 코드 검색 (Absolute) ---
+# ==========================================
+# 3. 검색 로직 (안전장치 추가)
+# ==========================================
 def search_absolute(songs, user_input_str, engine):
     found_songs = []
     user_chords = user_input_str.split()
     if not user_chords: return []
 
-    # 사용자가 입력한 코드의 (Root, Quality, Bass) 구조체 생성
     target_dna = []
     for c in user_chords:
         r, q, b = engine.parse_chord(c)
@@ -164,99 +121,70 @@ def search_absolute(songs, user_input_str, engine):
 
     for song in songs:
         try:
-            song_chords = extract_clean_chords(song)
-            if len(song_chords) < search_len: continue
+            # 파싱 안 되는 코드는 아예 리스트에서 빼버림 (필터링)
+            song_chords_raw = extract_clean_chords(song)
+            song_chords_clean = []
+            for c in song_chords_raw:
+                r, _, _ = engine.parse_chord(c)
+                if r: song_chords_clean.append(c) # 정상 코드만 담기
 
-            for i in range(len(song_chords) - search_len + 1):
-                window = song_chords[i : i + search_len]
+            if len(song_chords_clean) < search_len: continue
+
+            for i in range(len(song_chords_clean) - search_len + 1):
+                window = song_chords_clean[i : i + search_len]
                 match = True
-                
                 for j in range(search_len):
                     wr, wq, wb = engine.parse_chord(window[j])
-                    tr, tq, tb = target_dna[j]['root'], target_dna[j]['quality'], target_dna[j]['bass']
-                    
-                    # 1. 근음(Root)이 정확히 같은가? (이명동음 처리 위해 숫자값 비교)
-                    if engine.get_semitone_distance(tr, wr) != 0:
-                        match = False; break
-                    # 2. 성질(Quality)이 같은가?
-                    if tq != wq:
-                        match = False; break
-                    # 3. 베이스(Bass)가 정확히 같은가?
-                    if engine.get_semitone_distance(tb, wb) != 0:
-                        match = False; break
-                
-                if match:
-                    found_songs.append(song)
-                    break
+                    t = target_dna[j]
+                    if engine.get_semitone_distance(t['root'], wr) != 0: match = False; break
+                    if t['quality'] != wq: match = False; break
+                    if engine.get_semitone_distance(t['bass'], wb) != 0: match = False; break
+                if match: found_songs.append(song); break
         except: continue
     return found_songs
 
-# --- [모드 2] 화성적 기능 코드 검색 (Harmonic Function) ---
 def search_harmonic_function(songs, user_input_str, context_key, engine):
     found_songs = []
     user_chords = user_input_str.split()
     if not user_chords: return []
-    
-    # Context Key 검증
     if context_key not in engine.note_map: return []
 
-    # Target DNA: (Key로부터의 거리, Quality, Root-Bass 간격)
     target_dna = []
     for c in user_chords:
         r, q, b = engine.parse_chord(c)
         if not r: return []
-        
-        # Key 기준 Root의 도수 (예: Key C에서 Em -> 거리 4)
         degree_interval = engine.get_semitone_distance(context_key, r)
-        # Bass Offset (예: C/E -> 거리 4)
         bass_offset = engine.get_semitone_distance(r, b)
-        
-        target_dna.append({
-            "degree": degree_interval,
-            "quality": q,
-            "bass_offset": bass_offset
-        })
+        target_dna.append({"degree": degree_interval, "quality": q, "bass_offset": bass_offset})
 
     search_len = len(target_dna)
 
     for song in songs:
         try:
-            # 곡의 Key 가져오기
             song_key_root = engine.get_key_root(song.key)
             if song_key_root not in engine.note_map: continue
 
-            song_chords = extract_clean_chords(song)
-            if len(song_chords) < search_len: continue
+            song_chords_raw = extract_clean_chords(song)
+            song_chords_clean = []
+            for c in song_chords_raw:
+                r, _, _ = engine.parse_chord(c)
+                if r: song_chords_clean.append(c)
 
-            for i in range(len(song_chords) - search_len + 1):
-                window = song_chords[i : i + search_len]
+            if len(song_chords_clean) < search_len: continue
+
+            for i in range(len(song_chords_clean) - search_len + 1):
+                window = song_chords_clean[i : i + search_len]
                 match = True
-
                 for j in range(search_len):
                     wr, wq, wb = engine.parse_chord(window[j])
                     t = target_dna[j]
-
-                    # 1. 도수(Degree) 비교: (곡의 Key ~ 코드 Root) == (사용자 Key ~ 사용자 Root)
-                    current_degree = engine.get_semitone_distance(song_key_root, wr)
-                    if current_degree != t["degree"]:
-                        match = False; break
-                    
-                    # 2. Quality 비교
-                    if wq != t["quality"]:
-                        match = False; break
-
-                    # 3. Bass Offset 비교
-                    current_bass_offset = engine.get_semitone_distance(wr, wb)
-                    if current_bass_offset != t["bass_offset"]:
-                        match = False; break
-                
-                if match:
-                    found_songs.append(song)
-                    break
+                    if engine.get_semitone_distance(song_key_root, wr) != t["degree"]: match = False; break
+                    if wq != t["quality"]: match = False; break
+                    if engine.get_semitone_distance(wr, wb) != t["bass_offset"]: match = False; break
+                if match: found_songs.append(song); break
         except: continue
     return found_songs
 
-# --- [모드 3] 상대적 인터벌 검색 (기존 기능) ---
 def search_relative_interval(songs, user_input_str, engine):
     found_songs = []
     user_chords = user_input_str.split()
@@ -266,7 +194,6 @@ def search_relative_interval(songs, user_input_str, engine):
     fr, fq, fb = engine.parse_chord(user_chords[0])
     if not fr: return []
 
-    # 첫 코드 기준 상대 거리 저장
     for c in user_chords:
         r, q, b = engine.parse_chord(c)
         root_int = engine.get_semitone_distance(fr, r)
@@ -277,12 +204,18 @@ def search_relative_interval(songs, user_input_str, engine):
 
     for song in songs:
         try:
-            song_chords = extract_clean_chords(song)
-            if len(song_chords) < search_len: continue
+            song_chords_raw = extract_clean_chords(song)
+            song_chords_clean = []
+            for c in song_chords_raw:
+                r, _, _ = engine.parse_chord(c)
+                if r: song_chords_clean.append(c) # 정상 코드만
+
+            if len(song_chords_clean) < search_len: continue
             
-            for i in range(len(song_chords) - search_len + 1):
-                window = song_chords[i : i + search_len]
-                wfr, _, _ = engine.parse_chord(window[0]) # 윈도우 첫 코드 기준
+            for i in range(len(song_chords_clean) - search_len + 1):
+                window = song_chords_clean[i : i + search_len]
+                wfr, _, _ = engine.parse_chord(window[0]) 
+                
                 match = True
                 for j in range(search_len):
                     wr, wq, wb = engine.parse_chord(window[j])
@@ -297,13 +230,12 @@ def search_relative_interval(songs, user_input_str, engine):
     return found_songs
 
 # ==========================================
-# 3. UI 구성 (Streamlit)
+# 4. UI 구성
 # ==========================================
 st.set_page_config(page_title="Jazz Chord Finder", layout="wide")
 st.title("🎷 iReal Pro Chord Finder")
-st.markdown("원하는 방식으로 재즈 스탠다드 곡을 검색하세요.")
+st.markdown("유령 코드를 제거하고 정확하게 검색합니다.")
 
-# 데이터 로딩
 if len(DEFAULT_DATA) < 50:
     st.error("⚠️ 코드 상단의 `DEFAULT_DATA` 변수에 데이터를 넣어주세요.")
     st.stop()
@@ -314,35 +246,24 @@ else:
 
 st.divider()
 
-# --- 검색 모드 선택 ---
 search_mode = st.radio(
     "검색 모드 선택",
     ("실음 코드 검색 (Real Note)", "화성적 기능 코드 검색 (Harmonic Function)", "상대적 인터벌 검색 (Interval)"),
-    index=1,
-    help="""
-    - **실음 코드**: 입력한 코드 이름 그대로 검색합니다. (예: Dm7은 Dm7만 찾음)
-    - **화성적 기능**: 설정한 키 내에서의 역할을 기준으로 검색합니다. (예: C키의 Em7 = 3도 마이너)
-    - **상대적 인터벌**: 키와 상관없이 코드들 간의 간격 흐름만 봅니다.
-    """
+    index=2
 )
 
-# --- 입력 UI ---
 col1, col2, col3 = st.columns([1, 3, 1])
 engine = HarmonyEngine()
 
 with col1:
-    # 화성적 기능 검색일 때만 '기준 키' 선택창 표시
     if "화성적 기능" in search_mode:
         key_options = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B']
         selected_key = st.selectbox("기준 키 (Key)", key_options, index=0)
     else:
-        st.write("") # 빈 공간
+        st.write("")
 
 with col2:
-    input_placeholder = "예: Dm7 G7 Cmaj7"
-    if "실음" in search_mode: input_placeholder = "예: Dm7 G7 (정확히 이 코드만 찾음)"
-    elif "화성적" in search_mode: input_placeholder = f"예: Em7 A7 (Key {selected_key} 기준 3도-6도 진행)"
-    
+    input_placeholder = "예: F#m7b5 B7 Dm7"
     search_input = st.text_input("코드 진행 입력", placeholder=input_placeholder)
 
 with col3:
@@ -350,34 +271,19 @@ with col3:
     st.write("")
     run_btn = st.button("검색 🚀", use_container_width=True)
 
-# --- 실행 로직 ---
 if run_btn and search_input:
     results = []
     
     if "실음" in search_mode:
-        st.caption(f"🔍 **Absolute Mode:** '{search_input}' 그대로 검색")
         results = search_absolute(song_db, search_input, engine)
-        
     elif "화성적" in search_mode:
-        st.caption(f"🔍 **Harmonic Mode:** Key {selected_key}에서 '{search_input}'의 역할로 검색")
         results = search_harmonic_function(song_db, search_input, selected_key, engine)
-        
-    else: # 상대적 인터벌
-        st.caption(f"🔍 **Interval Mode:** '{search_input}'의 상대적 흐름으로 검색")
+    else: 
         results = search_relative_interval(song_db, search_input, engine)
 
-    # 결과 출력
     st.subheader(f"결과: {len(results)}곡 발견")
     if results:
-        # 결과 테이블 데이터 생성
-        res_data = []
-        for s in results:
-            res_data.append({
-                "Title": s.title,
-                "Composer": s.composer,
-                "Key": s.key,      # 곡의 원래 키
-                "Style": s.style
-            })
+        res_data = [{"Title": s.title, "Composer": s.composer, "Key": s.key, "Style": s.style} for s in results]
         st.dataframe(res_data, use_container_width=True)
     else:
         st.warning("조건에 맞는 곡을 찾지 못했습니다.")
