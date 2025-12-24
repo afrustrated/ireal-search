@@ -234,7 +234,7 @@ def search_relative_interval(songs, user_input_str, engine):
 # ==========================================
 st.set_page_config(page_title="Jazz Chord Finder", layout="wide")
 st.title("🎷 iReal Pro Chord Finder")
-st.markdown("유령 코드를 제거하고 정확하게 검색합니다.")
+st.markdown("코드 진행으로 곡을 검색하세요.")
 
 if len(DEFAULT_DATA) < 50:
     st.error("⚠️ 코드 상단의 `DEFAULT_DATA` 변수에 데이터를 넣어주세요.")
