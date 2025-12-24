@@ -83,10 +83,32 @@ def load_songs_from_string(ireal_string):
     return songs
 
 def extract_clean_chords(song):
-    """ 곡의 코드 문자열을 리스트로 변환 """
+    """ 곡의 코드 문자열을 리스트로 변환 (중복 제거 기능 추가됨) """
+    # 1. 표기법 통일 (마이너, 메이저 기호 등)
     raw = song.chord_string.replace("-", "m").replace("^", "maj")
+    
+    # 2. 특수기호 제거 (마디줄, 괄호, 박자표시 등)
     clean = re.sub(r"[\|\[\]\{\}\(\)\*xT<>]", " ", raw)
-    return [c for c in clean.split() if not c.isdigit()]
+    
+    # 3. 1차 리스트 변환 (숫자 제외)
+    raw_list = [c for c in clean.split() if not c.isdigit()]
+    
+    # 4. [핵심] 연속된 중복 코드 제거 (Merge Logic)
+    # 예: ['F#m7b5', 'B7', 'B7', 'Dm7'] -> ['F#m7b5', 'B7', 'Dm7']
+    if not raw_list:
+        return []
+        
+    merged_list = [raw_list[0]] # 첫 번째 코드는 무조건 넣음
+    
+    for i in range(1, len(raw_list)):
+        current_chord = raw_list[i]
+        previous_chord = raw_list[i-1]
+        
+        # 바로 앞의 코드와 다를 때만 리스트에 추가
+        if current_chord != previous_chord:
+            merged_list.append(current_chord)
+            
+    return merged_list
 
 # --- [모드 1] 실음 코드 검색 (Absolute) ---
 def search_absolute(songs, user_input_str, engine):
