@@ -23,17 +23,54 @@ class HarmonyEngine:
         self.num_to_note = {v: k for k, v in self.note_map.items()}
 
     def simplify_quality(self, quality_str):
-        """ 코드 성질 단순화 및 정규화 """
-        q = quality_str.strip()
-        q = q.replace("^", "maj").replace("-", "m")
-
-        if q in ["", "6", "maj", "maj7", "M7", "M"]: return "MAJOR"
-        if q in ["m", "m6", "min"]: return "MINOR"
-        if q in ["dim", "dim7", "o", "o7", "0", "°", "diminished"]: return "DIM"
-        if q in ["m7b5", "h", "h7", "ø", "Ø"]: return "HALF_DIM"
-        if q in ["7", "9", "11", "13", "7alt", "7b9", "7#9"]: return "DOMINANT" # 도미넌트도 묶음 (선택)
-        
-        return q
+            """ 
+            코드 성질 단순화 (논리 순서 수정됨)
+            - 기존 버그 수정: 7-9(7b9)이 마이너로 인식되는 문제 해결
+            """
+            q = quality_str.strip()
+            
+            # 1. 표기법 대통합 (Maj, Dim 등 안전한 것만 먼저 변환)
+            # 주의: '-'를 'm'으로 섣불리 바꾸지 않습니다.
+            q = q.replace("^", "maj").replace("min", "m").replace("Min", "m")
+    
+            # [그룹 1] 하프 디미니시 (가장 특이하므로 1순위 체크)
+            # m7b5, h, ø
+            if "m7b5" in q or "h" in q or "ø" in q:
+                return "HALF_DIM"
+    
+            # [그룹 2] 디미니시
+            if "dim" in q or "o" in q or "°" in q:
+                return "DIM"
+    
+            # [그룹 3] 도미넌트 패밀리 (핵심 수정!)
+            # 7, 9, 13, alt 등이 있으면 마이너 기호(-)가 있든 말든 도미넌트입니다.
+            # 예: 7-9 (7b9), 7alt, 9, 13
+            if "7" in q or "9" in q or "11" in q or "13" in q or "alt" in q:
+                # 단, 'm7'이나 'maj7'은 제외해야 함
+                is_minor = "m" in q or ("-" in q and "7" not in q) # 7 없이 -만 있으면 마이너
+                is_major = "maj" in q or "M" in q
+                
+                # 마이너도 아니고 메이저도 아닌데 숫자(7,9..)가 있다? -> 도미넌트
+                if not is_minor and not is_major:
+                    return "DOMINANT"
+                
+                # 예외: C-7 (Cm7) 같은 경우 '-'가 m 역할을 함.
+                # 하지만 C7-9 (C7b9) 같은 경우 '-'는 b 역할을 함.
+                # 따라서 '7' 바로 뒤에 '-'가 오면 텐션(b)일 확률이 높음.
+                if "7-" in q: 
+                    return "DOMINANT"
+    
+            # [그룹 4] 마이너 패밀리
+            # m, -, min
+            if "m" in q or "-" in q:
+                return "MINOR"
+    
+            # [그룹 5] 메이저 패밀리
+            # 아무것도 없거나, 6, maj
+            if q == "" or q == "6" or "maj" in q or "M" in q:
+                return "MAJOR"
+    
+            return "DOMINANT" # 분류 안 되면 도미넌트로 퉁침 (안전장치)
 
     def parse_chord(self, chord_str):
         """ (근음, 단순화된 성질, 베이스음) 반환 """
